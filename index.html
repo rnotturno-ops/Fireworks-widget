@@ -94,16 +94,18 @@
       }
     }
 
-    document.body.addEventListener('click', (e) => {
-      fireThreeBursts(e.clientX, e.clientY, () => {
+    function triggerFireworks(x, y) {
+      fireThreeBursts(x, y, () => {
         setTimeout(notifyReturn, 500);
       });
+    }
+
+    document.body.addEventListener('click', (e) => {
+      triggerFireworks(e.clientX, e.clientY);
     });
 
     window.addEventListener('load', () => {
-      fireThreeBursts(window.innerWidth / 2, window.innerHeight / 2, () => {
-        setTimeout(notifyReturn, 500);
-      });
+      triggerFireworks(window.innerWidth / 2, window.innerHeight / 2);
     });
   </script>
 </body>
