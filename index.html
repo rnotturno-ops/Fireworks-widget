@@ -1,158 +1,110 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>Fireworks Widget</title>
-<style>
-  html,body{height:100%;margin:0;background:transparent;overflow:hidden;-webkit-tap-highlight-color:transparent}
-  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fireworks Widget</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
-<canvas id="fireworks"></canvas>
-<script>
-/* CONFIG */
-const BURST_PARTICLES = 110;
-const BURST_INTERVALS = [0, 300, 620]; // ms offsets for 3 bursts
-const AUTO_FIRE_ON_LOAD = true;
-const AUTO_RETURN_DELAY_AFTER_LAST_BURST = 700; // ms after last burst to notify/return
+  <canvas id="fireworks"></canvas>
+  <script>
+    const canvas = document.getElementById('fireworks');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
 
-/* URL param */
-const urlParams = new URLSearchParams(location.search);
-const returnUrl = urlParams.get('returnUrl'); 
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
 
-/* Setup */
-const canvas = document.getElementById('fireworks');
-const ctx = canvas.getContext('2d', { alpha: true });
-let particles = [];
-let rafId;
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
-function resize(){ 
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(innerWidth * dpr);
-  canvas.height = Math.round(innerHeight * dpr);
-  canvas.style.width = innerWidth + 'px';
-  canvas.style.height = innerHeight + 'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
-addEventListener('resize', resize);
-resize();
+    function createFirework(x, y) {
+      for (let i = 0; i < 100; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          angle: Math.random() * 2 * Math.PI,
+          speed: Math.random() * 5 + 2,
+          radius: Math.random() * 2 + 1,
+          alpha: 1,
+          decay: Math.random() * 0.02 + 0.01,
+          color: `hsl(${Math.random() * 360}, 100%, 60%)`
+        });
+      }
+    }
 
-/* Particle factory */
-function makeParticles(x,y,count=BURST_PARTICLES){
-  for(let i=0;i<count;i++){
-    const angle = Math.random()*Math.PI*2;
-    const speed = Math.random()*5 + 1.5;
-    particles.push({
-      x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      r: Math.random()*2.3 + 0.6,
-      life: Math.random()*60 + 50,
-      age: 0,
-      color: `hsl(${Math.floor(Math.random()*360)},92%,58%)`
+    function updateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles = particles.filter(p => p.alpha > 0);
+      for (let p of particles) {
+        p.x += Math.cos(p.angle) * p.speed;
+        p.y += Math.sin(p.angle) * p.speed;
+        p.alpha -= p.decay;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, 2 * Math.PI);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function loop() {
+      updateParticles();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+
+    function fireThreeBursts(x, y, callback) {
+      createFirework(x, y);
+      setTimeout(() => createFirework(x, y), 300);
+      setTimeout(() => {
+        createFirework(x, y);
+        if (callback) callback();
+      }, 600);
+    }
+
+    function notifyReturn() {
+      try {
+        parent.postMessage({ type: 'fireworksDone' }, '*');
+      } catch (e) {}
+      const urlParams = new URLSearchParams(window.location.search);
+      const returnUrl = urlParams.get('returnUrl');
+      if (returnUrl) {
+        window.location.href = returnUrl;
+      }
+    }
+
+    document.body.addEventListener('click', (e) => {
+      fireThreeBursts(e.clientX, e.clientY, () => {
+        setTimeout(notifyReturn, 500);
+      });
     });
-  }
-}
 
-/* Animation step */
-function step(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  for(let i = particles.length - 1; i >= 0; i--){
-    const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy + (p.age * 0.02);
-    p.vx *= 0.995;
-    p.vy *= 0.995;
-    p.age++;
-    const alpha = Math.max(0, 1 - p.age / p.life);
-    if(alpha <= 0.01){ particles.splice(i,1); continue; }
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  rafId = requestAnimationFrame(step);
-}
-step();
-
-/* Fire a 3-burst sequence at (x,y) */
-function fireSequence(x,y,done){
-  BURST_INTERVALS.forEach((offset) => {
-    setTimeout(() => makeParticles(x,y), offset);
-  });
-  const total = Math.max(...BURST_INTERVALS) + AUTO_RETURN_DELAY_AFTER_LAST_BURST;
-  if(done) setTimeout(done, total);
-}
-
-/* Notify parent or navigate back */
-function notifyParentAndReturn(){
-  try { parent.postMessage({type:'fireworksDone'}, '*'); } catch(e){}
-  if(returnUrl){
-    try { location.href = returnUrl; } catch(e){}
-  }
-}
-
-/* Input handling: ensure it works on iPad + Android */
-let firstInteractionHandled = false;
-function handleTrigger(clientX, clientY){
-  const rect = canvas.getBoundingClientRect();
-  const x = (clientX - rect.left);
-  const y = (clientY - rect.top);
-  fireSequence(x, y, () => {
-    // slight delay to ensure last particles render before returning
-    setTimeout(notifyParentAndReturn, 50);
-  });
-}
-
-/* Pointer / touch / click listeners */
-function onPointer(ev){
-  ev.preventDefault();
-  firstInteractionHandled = true;
-  handleTrigger(ev.clientX, ev.clientY);
-}
-canvas.addEventListener('pointerdown', onPointer, {passive:false});
-canvas.addEventListener('touchstart', function(ev){
-  ev.preventDefault();
-  firstInteractionHandled = true;
-  const t = ev.changedTouches[0];
-  handleTrigger(t.clientX, t.clientY);
-}, {passive:false});
-canvas.addEventListener('click', function(ev){
-  // fallback for older browsers
-  if(!firstInteractionHandled){
-    firstInteractionHandled = true;
-    handleTrigger(ev.clientX, ev.clientY);
-  }
-}, {passive:false});
-
-/* Auto-fire behavior with iOS fallback */
-function attemptAutoFire(){
-  const cx = innerWidth/2;
-  const cy = innerHeight/2;
-  // Try to auto-fire. On iOS Safari this may be allowed (no audio here), but if browser blocks
-  // anything that requires gesture, the first tap will still trigger due to listeners above.
-  try {
-    fireSequence(cx, cy, () => {
-      setTimeout(notifyParentAndReturn, 50);
+    window.addEventListener('load', () => {
+      fireThreeBursts(window.innerWidth / 2, window.innerHeight / 2, () => {
+        setTimeout(notifyReturn, 500);
+      });
     });
-  } catch(e){
-    // ignore — user tap will trigger instead
-  }
-}
-
-/* Auto-fire on load, but if first interaction is required the user tap will still work */
-if(AUTO_FIRE_ON_LOAD){
-  window.addEventListener('load', function(){
-    // small delay so view is ready and iOS has processed layout
-    setTimeout(() => {
-      if(!firstInteractionHandled) attemptAutoFire();
-    }, 140);
-  });
-}
-</script>
+  </script>
 </body>
 </html>
