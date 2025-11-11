@@ -1,36 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Fireworks Widget</title>
   <style>
-    html, body {
+    body, html {
       margin: 0;
       padding: 0;
-      width: 100%;
-      height: 100%;
-      background: transparent;
       overflow: hidden;
+      background: transparent;
     }
     canvas {
       display: block;
-      width: 100vw;
-      height: 100vh;
     }
   </style>
 </head>
 <body>
   <canvas id="fireworks"></canvas>
-
   <script>
     const canvas = document.getElementById('fireworks');
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-
-    let particles = [];
-    let rafId = null;
-    let running = false;
 
     class Particle {
       constructor(x, y, color, size, speedX, speedY) {
@@ -57,8 +48,9 @@
       }
     }
 
-    // Original bold burst (multi-color, high particle count)
-    function burstOriginal(x, y) {
+    let particles = [];
+
+    function burst(x, y) {
       const colors = ['red', 'yellow', 'white', 'orange'];
       for (let i = 0; i < 120; i++) {
         const angle = Math.random() * 2 * Math.PI;
@@ -73,40 +65,6 @@
       }
     }
 
-    // Bold neon burst (greens/blues)
-    function burstNeon(x, y) {
-      const colors = ['lime', 'cyan', 'blue', '#00ffea'];
-      for (let i = 0; i < 120; i++) {
-        const angle = Math.random() * 2 * Math.PI;
-        const speed = Math.random() * 7 + 4;
-        particles.push(new Particle(
-          x, y,
-          colors[Math.floor(Math.random() * colors.length)],
-          4.5,
-          Math.cos(angle) * speed,
-          Math.sin(angle) * speed
-        ));
-      }
-    }
-
-    // Bold hot burst (pinks/purples)
-    function burstHot(x, y) {
-      const colors = ['magenta', 'purple', '#ff66c4', '#ff1493'];
-      for (let i = 0; i < 120; i++) {
-        const angle = Math.random() * 2 * Math.PI;
-        const speed = Math.random() * 7 + 4;
-        particles.push(new Particle(
-          x, y,
-          colors[Math.floor(Math.random() * colors.length)],
-          4.5,
-          Math.cos(angle) * speed,
-          Math.sin(angle) * speed
-        ));
-      }
-    }
-
-    const bursts = [burstOriginal, burstNeon, burstHot];
-
     function animate() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       particles.forEach((p, i) => {
@@ -114,37 +72,23 @@
         p.draw();
         if (p.alpha <= 0) particles.splice(i, 1);
       });
-      if (running) rafId = requestAnimationFrame(animate);
+      requestAnimationFrame(animate);
     }
 
     function startFireworks() {
-      if (running) return;
-      running = true;
-
-      const burst = bursts[Math.floor(Math.random() * bursts.length)];
       burst(canvas.width / 2, canvas.height / 2);
-
       animate();
-
-      setTimeout(stopFireworks, 3000);
+      setTimeout(stopFireworks, 3000); // stop after 3 seconds
     }
 
     function stopFireworks() {
-      running = false;
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
       particles = [];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Disable pointer events so Book Creator regains control
-      canvas.style.pointerEvents = 'none';
-      document.body.style.pointerEvents = 'none';
-      document.body.removeEventListener('click', startFireworks);
+      // After this, Book Creator regains control
     }
 
-    document.body.addEventListener('click', startFireworks, { once: true });
+    // Trigger fireworks when tapped
+    document.body.addEventListener('click', startFireworks);
   </script>
 </body>
 </html>
