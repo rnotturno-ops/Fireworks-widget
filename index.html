@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Fireworks Widget</title>
   <style>
     html, body {
@@ -21,48 +21,34 @@
 </head>
 <body>
   <canvas id="fireworks"></canvas>
-
   <script>
     const canvas = document.getElementById('fireworks');
-    const ctx = canvas.getContext('2d', { alpha: true });
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let particles = [];
     let rafId = null;
     let running = false;
-    let particles = [];
-
-    function resize() {
-      const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
-      canvas.style.width = '100vw';
-      canvas.style.height = '100vh';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    resize();
-    window.addEventListener('resize', resize);
 
     class Particle {
-      constructor(x, y, color, size, vx, vy, fade, gravity, friction) {
+      constructor(x, y, color, size, speedX, speedY) {
         this.x = x;
         this.y = y;
         this.color = color;
         this.size = size;
-        this.vx = vx;
-        this.vy = vy;
+        this.speedX = speedX;
+        this.speedY = speedY;
         this.alpha = 1;
-        this.fade = fade;
-        this.gravity = gravity;
-        this.friction = friction;
       }
       update() {
-        this.vx *= this.friction;
-        this.vy = this.vy * this.friction + this.gravity;
-        this.x += this.vx;
-        this.y += this.vy;
-        this.alpha -= this.fade;
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.alpha -= 0.01; // slower fade
       }
       draw() {
-        ctx.globalCompositeOperation = 'lighter'; // vivid additive glow
-        ctx.globalAlpha = Math.max(this.alpha, 0);
+        ctx.globalCompositeOperation = 'lighter'; // glow
+        ctx.globalAlpha = this.alpha;
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
@@ -72,58 +58,52 @@
       }
     }
 
-    // Gigantic, kid-amazing bursts (three distinct palettes), all equally bold
-    function burstClassic(cx, cy) {
-      const colors = ['#ff0000', '#ffd700', '#ffffff', '#ff8c00']; // red/gold/white/orange
-      spawnBurst(cx, cy, 200, colors, 6, 11, 4.8, 0.013, 0.05, 0.985);
-    }
-    function burstNeon(cx, cy) {
-      const colors = ['#00ffea', '#00ff00', '#00a2ff', '#32ffff']; // cyan/lime/blue
-      spawnBurst(cx, cy, 220, colors, 6, 12, 5.0, 0.012, 0.045, 0.985);
-    }
-    function burstHot(cx, cy) {
-      const colors = ['#ff2aa1', '#ff66c4', '#ff1493', '#a100ff']; // hot pinks/purples
-      spawnBurst(cx, cy, 210, colors, 6, 12, 5.0, 0.012, 0.045, 0.985);
-    }
-
-    function spawnBurst(cx, cy, count, palette, minSpeed, maxSpeed, size, fade, gravity, friction) {
+    function spawnBurst(x, y, colors, count) {
       for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
-        const vx = Math.cos(angle) * speed;
-        const vy = Math.sin(angle) * speed;
-        const color = palette[Math.floor(Math.random() * palette.length)];
-        particles.push(new Particle(cx, cy, color, size, vx, vy, fade, gravity, friction));
+        const angle = Math.random() * 2 * Math.PI;
+        const speed = Math.random() * 6 + 3;
+        particles.push(new Particle(
+          x, y,
+          colors[Math.floor(Math.random() * colors.length)],
+          5,
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed
+        ));
       }
     }
 
     function animate() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
+      particles.forEach((p, i) => {
         p.update();
         p.draw();
-        if (p.alpha <= 0 || p.y > canvas.height + 80) particles.splice(i, 1);
-      }
+        if (p.alpha <= 0) particles.splice(i, 1);
+      });
       if (running) rafId = requestAnimationFrame(animate);
     }
 
-    // Sequence: 3 gigantic bursts in quick succession, then stop
     function startFireworks() {
       if (running) return;
       running = true;
-
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
 
-      // Fire three bursts with different palettes, 300ms apart
-      burstClassic(cx, cy);
-      setTimeout(() => burstNeon(cx, cy - canvas.height * 0.04), 300);
-      setTimeout(() => burstHot(cx, cy + canvas.height * 0.04), 600);
+      // Burst 1: classic
+      spawnBurst(cx, cy, ['red','yellow','orange','white'], 220);
+
+      // Burst 2: neon (after 1s)
+      setTimeout(() => {
+        spawnBurst(cx, cy, ['lime','cyan','blue','#00ffea'], 220);
+      }, 1000);
+
+      // Burst 3: hot (after 2s)
+      setTimeout(() => {
+        spawnBurst(cx, cy, ['magenta','purple','#ff66c4','#ff1493'], 220);
+      }, 2000);
 
       animate();
 
-      // Stop after ~3 seconds total
+      // Stop after 3 seconds
       setTimeout(stopFireworks, 3000);
     }
 
@@ -133,23 +113,15 @@
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      particles.length = 0;
+      particles = [];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Release tap control back to Book Creator
+      // Release control back to Book Creator
       canvas.style.pointerEvents = 'none';
       document.body.style.pointerEvents = 'none';
-
-      // Gentle nudge to return focus
-      document.body.style.opacity = '0.999';
-      setTimeout(() => {
-        try { if (window.top && window.top.focus) window.top.focus(); } catch (e) {}
-      }, 50);
-
-      window.removeEventListener('resize', resize);
     }
 
-    // Auto-start when the widget loads (so tapping Eli’s face opens and fireworks begin immediately)
+    // Auto-trigger when widget loads
     window.addEventListener('load', startFireworks);
   </script>
 </body>
