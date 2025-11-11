@@ -1,128 +1,211 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Fireworks Widget</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: transparent;
-      overflow: hidden;
-    }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Fireworks Widget</title>
+<style>
+  html,body{height:100%;margin:0;background:transparent;overflow:hidden;-webkit-tap-highlight-color:transparent}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+</style>
 </head>
 <body>
-  <canvas id="fireworks"></canvas>
-  <script>
-    const canvas = document.getElementById('fireworks');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+<canvas id="fireworks"></canvas>
+<script>
+/* CONFIG - increased drama */
+const BURST_OFFSETS = [0, 350, 750];         // ms offsets for 3 bursts
+const BURST_PROFILES = [
+  {count:160, speed: [2,6], size: [0.9,3.0], life:[80,130], colorSat:92},  // first big
+  {count:200, speed: [2.5,7], size: [1.2,3.6], life:[90,150], colorSat:96}, // bigger
+  {count:260, speed: [3,9], size: [1.5,4.2], life:[110,200], colorSat:100} // biggest finale
+];
+const SECONDARY_SPARKS = 40;                  // extra comet-like sparks per burst
+const RETURN_DELAY_AFTER_LAST = 700;          // ms after last burst before return attempts
+const urlParams = new URLSearchParams(location.search);
+const returnUrl = urlParams.get('returnUrl');
 
-    let particles = [];
-    let rafId = null;
-    let running = false;
+/* CANVAS SETUP */
+const canvas = document.getElementById('fireworks');
+const ctx = canvas.getContext('2d', { alpha: true });
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+  canvas.style.width = innerWidth + 'px';
+  canvas.style.height = innerHeight + 'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.lineWidth = 0.8;
+}
+addEventListener('resize', resize);
+resize();
 
-    class Particle {
-      constructor(x, y, color, size, speedX, speedY) {
-        this.x = x;
-        this.y = y;
-        this.color = color;
-        this.size = size;
-        this.speedX = speedX;
-        this.speedY = speedY;
-        this.alpha = 1;
-      }
-      update() {
-        this.x += this.speedX;
-        this.y += this.speedY;
-        this.alpha -= 0.01; // slower fade
-      }
-      draw() {
-        ctx.globalCompositeOperation = 'lighter'; // glow
-        ctx.globalAlpha = this.alpha;
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = 'source-over';
-      }
+/* PARTICLES */
+let particles = [];
+let trails = []; // for comet-like secondary sparks
+
+function rand(min, max){ return Math.random()*(max-min)+min; }
+function hue(){ return Math.floor(Math.random()*360); }
+
+/* create primary burst with layered particles and secondary sparks */
+function createBurst(x,y, profile){
+  // core radial particles
+  for(let i=0;i<profile.count;i++){
+    const angle = Math.random()*Math.PI*2;
+    const speed = rand(profile.speed[0], profile.speed[1]);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed,
+      r: rand(profile.size[0], profile.size[1]),
+      life: Math.floor(rand(profile.life[0], profile.life[1])),
+      age: 0,
+      hue: hue(),
+      sat: profile.colorSat,
+      bright: Math.floor(rand(55,78)),
+      decay: 0.008 + Math.random()*0.02
+    });
+  }
+  // secondary comet sparks that travel outward then burst into small particles
+  for(let i=0;i<SECONDARY_SPARKS;i++){
+    const angle = Math.random()*Math.PI*2;
+    const speed = rand(1.8, 4.5);
+    trails.push({
+      x, y,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed,
+      life: Math.floor(rand(26,48)),
+      age: 0,
+      hue: hue(),
+      sat: profile.colorSat,
+      bright: Math.floor(rand(60,88))
+    });
+  }
+}
+
+/* ANIMATION LOOP */
+function step(){
+  // draw subtle trail fade instead of full clear to create motion blur
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; // small alpha keeps background effectively transparent in host but creates motion trail
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.globalCompositeOperation = 'lighter'; // additive blending for bright fireworks
+
+  // update primary particles
+  for(let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy + (p.age * 0.015); // very light gravity
+    p.vx *= 0.995;
+    p.vy *= 0.995;
+    p.age++;
+    const alpha = Math.max(0, 1 - p.age / p.life);
+    if(alpha <= 0.02){
+      particles.splice(i,1);
+      continue;
     }
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = `hsl(${p.hue},${p.sat}%,${p.bright}%)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
 
-    function spawnBurst(x, y, colors, count) {
-      for (let i = 0; i < count; i++) {
-        const angle = Math.random() * 2 * Math.PI;
-        const speed = Math.random() * 6 + 3;
-        particles.push(new Particle(
-          x, y,
-          colors[Math.floor(Math.random() * colors.length)],
-          5,
-          Math.cos(angle) * speed,
-          Math.sin(angle) * speed
-        ));
+    // small glow stroke for dramatic look
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.strokeStyle = `hsla(${p.hue},${p.sat}%,${Math.min(90,p.bright+10)}%,${alpha*0.6})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r*1.6, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // update trailing/comet sparks; when they expire spawn small sparkle cluster
+  for(let i = trails.length - 1; i >= 0; i--){
+    const t = trails[i];
+    t.x += t.vx;
+    t.y += t.vy + (t.age * 0.02);
+    t.vx *= 0.995;
+    t.vy *= 0.995;
+    t.age++;
+    const alpha = Math.max(0, 1 - t.age / t.life);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = `hsl(${t.hue},${t.sat}%,${t.bright}%)`;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 2.2, 0, Math.PI*2);
+    ctx.fill();
+
+    if(t.age >= t.life - 2){
+      // micro burst
+      for(let k=0;k<8;k++){
+        const a = Math.random()*Math.PI*2;
+        const s = rand(0.8,3.2);
+        particles.push({
+          x: t.x, y: t.y,
+          vx: Math.cos(a)*s,
+          vy: Math.sin(a)*s,
+          r: rand(0.6,1.6),
+          life: Math.floor(rand(28,60)),
+          age: 0,
+          hue: t.hue,
+          sat: t.sat,
+          bright: Math.floor(rand(60,88)),
+          decay: 0.01 + Math.random()*0.02
+        });
       }
+      trails.splice(i,1);
     }
+  }
 
-    function animate() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach((p, i) => {
-        p.update();
-        p.draw();
-        if (p.alpha <= 0) particles.splice(i, 1);
-      });
-      if (running) rafId = requestAnimationFrame(animate);
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(step);
+}
+step();
+
+/* FIRE SEQUENCE (3 dramatic bursts in order) */
+function fireSequence(x,y, done){
+  BURST_OFFSETS.forEach((offset, i) => {
+    setTimeout(() => {
+      createBurst(x, y, BURST_PROFILES[i]);
+    }, offset);
+  });
+  const totalTime = Math.max(...BURST_OFFSETS) + RETURN_DELAY_AFTER_LAST + Math.max(...BURST_PROFILES.map(p=>p.life[1]));
+  if(done) setTimeout(done, Math.max(totalTime, Math.max(...BURST_OFFSETS) + RETURN_DELAY_AFTER_LAST));
+}
+
+/* RETURN STRATEGY (multiple fallbacks) */
+function attemptReturn(){
+  try { parent.postMessage({type:'fireworksDone'}, '*'); } catch(e){}
+  try { if(window.opener) window.opener.postMessage({type:'fireworksDone'}, '*'); } catch(e){}
+  try { if(window.opener && !window.opener.closed){ window.opener.focus(); window.close(); } } catch(e){}
+  try { setTimeout(()=>{ history.back(); }, 120); } catch(e){}
+  if(returnUrl){
+    setTimeout(()=>{ try { location.href = returnUrl; } catch(e){} }, 220);
+  }
+}
+
+/* TRIGGER HANDLING (iOS + Android friendly) */
+let interacted = false;
+function triggerAt(clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  fireSequence(x, y, () => {
+    setTimeout(attemptReturn, 120);
+  });
+  interacted = true;
+}
+
+canvas.addEventListener('pointerdown', e => { e.preventDefault(); triggerAt(e.clientX, e.clientY); }, {passive:false});
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; triggerAt(t.clientX, t.clientY); }, {passive:false});
+canvas.addEventListener('click', e => { if(!interacted) triggerAt(e.clientX, e.clientY); }, {passive:false});
+
+/* AUTO-FIRE ON LOAD with gesture fallback */
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if(!interacted){
+      const cx = innerWidth/2, cy = innerHeight/2;
+      fireSequence(cx, cy, () => { setTimeout(attemptReturn, 120); });
     }
-
-    function startFireworks() {
-      if (running) return;
-      running = true;
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-
-      // Burst 1: classic
-      spawnBurst(cx, cy, ['red','yellow','orange','white'], 220);
-
-      // Burst 2: neon (after 1s)
-      setTimeout(() => {
-        spawnBurst(cx, cy, ['lime','cyan','blue','#00ffea'], 220);
-      }, 1000);
-
-      // Burst 3: hot (after 2s)
-      setTimeout(() => {
-        spawnBurst(cx, cy, ['magenta','purple','#ff66c4','#ff1493'], 220);
-      }, 2000);
-
-      animate();
-
-      // Stop after 3 seconds
-      setTimeout(stopFireworks, 3000);
-    }
-
-    function stopFireworks() {
-      running = false;
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-      particles = [];
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Release control back to Book Creator
-      canvas.style.pointerEvents = 'none';
-      document.body.style.pointerEvents = 'none';
-    }
-
-    // Auto-trigger when widget loads
-    window.addEventListener('load', startFireworks);
-  </script>
+  }, 140);
+});
+</script>
 </body>
 </html>
